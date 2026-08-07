@@ -1,0 +1,19 @@
+# Core dependencies
+openai>=1.0.0
+python-dotenv>=1.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+networkx>=3.0
+pyyaml>=6.0
+
+# For embeddings and similarity
+sentence-transformers>=2.2.0
+torch>=2.0.0
+
+# For AppWorld benchmark (if using)
+appworld  # Check if available on PyPI
+
+# Utilities
+tqdm>=4.65.0
+pandas>=2.0.0
+matplotlib>=3.7.0
