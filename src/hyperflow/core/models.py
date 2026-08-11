@@ -158,3 +158,34 @@ class HyperEdge(BaseModel):
             'description': self.description,
             'is_hyperedge': True
         }
+
+class Dependency(BaseModel):
+    """
+    A port-level schema dependency between nodes.
+    
+    Represents that an output schema of one tool can satisfy an
+    input schema of another tool. Dependencies are directional
+    and have weights indicating semantic match strength.
+    
+    Attributes:
+        id: Unique dependency identifier
+        source_node: Output/effect node that provides data
+        target_node: Input/condition node that requires data
+        weight: Semantic match strength (0.0 to 1.0)
+        is_automated: Whether this was automatically inferred
+        verified: Whether this has been human-verified
+    """
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID = Field(default_factory=uuid4)
+    source_node = UUID
+    target_node = UUID
+    weight = float = Field(..., ge=0, le=1.0)
+    is_automated = bool = True
+    verified = bool = False
+    created_at = datetime = Field(default_factory=datetime.utcnow)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    def is_weak(self) -> bool:
+        """check if this is a weak dependency"""
+        return self.weight < 0.5
