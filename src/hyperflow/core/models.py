@@ -91,3 +91,70 @@ class Node(BaseModel):
             v['$schema']= 'http://json-schema.org/draft-07/schema#'
         return v
 
+    def to_network_node(self) -> Dict[str, Any]:
+        """convert to networkX node attributes"""
+        return {
+            'name': self.name,
+            'type': self.node_type.value,
+            'description' : self.description,
+            'is_required': self.is_required
+        }
+
+    def __hash__(self) -> int:
+        """hash by id for use in sets/dicts"""
+        return hash(self.id)
+class HyperEdge(BaseModel):
+    """
+    A hyperedge representing tool in the hypergraph.
+    Unlike regular edges that connects two nodes, hyperedges connect 
+    multiple input nodes to multiple output nodes. This captures
+    the joint constraints of tool invocation: all required inputs 
+    must be availble, and all outputs are produced together.
+
+    Attributes: 
+        id: Unique hyperedge identifier
+        name: Tool name
+        description: Tool description
+        input_nodes: Set of input schema node IDs
+        output_nodes: Set of output/effect node IDs
+        metadata: Additional tool metadata (OpenAPI spec, etc.)
+    """
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID = Field(default_factory=uuid4)
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1)
+    input_nodes: Set[UUID] = Field(default_factory=set)
+    output_nodes: Set[UUID] = Field(default_factory=set)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    @validator('input_nodes')
+    def validate_inputs(cls, v: Set[UUID]) -> Set[UUID]:
+        """Tools must have atleast one imput"""
+        if not v:
+            raise ValueError("Tool must have at least one input node")
+        return v
+
+    @validator('output_nodes')
+    def validate_outputs(cls, v: Set[UUID]) -> Set[UUID]:
+        """Tools must have at least one output."""
+        if not v:
+            raise ValueError("Tool must have at least one output node")
+        return v
+
+    def get_inputs(self) -> List[UUID]:
+        """ get input node IDs as list for deterministic ordering"""
+        return sorted(list(self.input_nodes))
+
+    def get_outputs(self) -> List[UUID]:
+        """Get output node IDs as list for deterministic ordering."""
+        return sorted(list(self.output_nodes))
+
+    def to_network_edge(self) -> Dict[str, Any]:
+        """Convert to networkx hyperedge representation"""
+        return {
+            'name': self.name,
+            'description': self.description,
+            'is_hyperedge': True
+        }
