@@ -189,3 +189,149 @@ class Dependency(BaseModel):
     def is_weak(self) -> bool:
         """check if this is a weak dependency"""
         return self.weight < 0.5
+
+
+class ToolSchemaHypergraph(BaseModel):
+    """
+    The complete tool-schema hypergraph
+
+    This is the core data structure that models all tools and their
+    schema level relationships. It enables efficient retrival of task relevant tools,
+    deficit oriented expansion for support graphs and schema aware planning and execution.
+
+    Attributes:
+        nodes: All schema, effect, and condition nodes
+        hyperedges: All tool hyperedges
+        dependencies: All port-level schema dependencies
+        support_matrix: Precomputed tool-schema support scores
+        node_index: Fast lookup for nodes by ID and name
+        edge_index: Fast lookup for hyperedges by ID and name
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    nodes: Dict[UUID, Node] = Field(default_factory=dict)
+    hyperedges: Dict[UUID, HyperEdge] = Field(default_factory=dict)
+    dependencies : Dict[UUID, Dependency] = Field(default_factory=dict)
+
+    # private fields ( not serialized to JSON)
+    _support_matrix: Optional[np.ndarray] = None
+    _node_name_index: Dict[str, UUID] = Field(default_factory=dict, exclude=True)
+    _edge_name_index: Dict[str, UUID] = Field(default_factory=dict, exclude=True)
+
+    def __init__(self, **data):
+        # initialize with automatic indexing
+        super().__init__(**data)
+        self.build_indexes()
+
+    def _build_indexs(self) -> None:
+        # build a fast lookup indexes for node and edge
+
+        self._node_name_index = {
+            node.name: node_id 
+            for node_id, node in self.nodes.items()
+        }
+        self._edge_name_index = {
+            edge.name: edge_id 
+            for edge_id, edge in self.hyperedges.items()
+        }
+
+    def add_node(self, node: Node) -> None:
+        """ Add a node to the hypergraph"""
+        self.nodes[node.id] = node
+        self._node_name_index[node.name] = node.id
+
+    def add_hyperedge(self, edge: HyperEdge) -> None:
+        # validate if all referenced nodes exist
+        for node_id in edge.input_nodes | edge.output_nodes:
+            if node_id not in self.nodes:
+                raise ValueError(f"Node {node_id} not found in hypergraph")
+
+        self.hyperedges[edge.id]= edge
+        self._edge_name_index[edge.name] = edge.id
+
+    def add_dependenc(self, dep: Dependency) -> None:
+        # validate if node exists
+        if dep.source_node not in self.nodes:
+            raise ValueError(f"Source node {dep.source_node} not found")
+        if dep.target_node not in self.nodes:
+            raise ValueError(f"Target node {dep.target_node} not found")
+
+        self.dependencies[dep.id] = dep
+
+    def get_node_by_name(self, name: str) -> Optional[Node]:
+        # get the node by its name
+        node_id = self._node_name_index.get(name)
+        return self.nodes.get(node_id) if node_id else None
+
+    def get_hyperedge_by_name(slef, name: str) -> Optional[HyperEdge]:
+        # get the hyperedge by its name
+        edge_id = self._edge_name_index.get(name)
+        return self.nodes.get(edge_id) if edge_id else None
+
+    def get_producers_for_input(
+            self,
+            input_node_id: UUID,
+            min_weight: float = 0.0
+
+    ) -> List[Tuple[UUID, float]]:
+        # get all producer tools that can satisfy an input schema, returns list of (hyperedge_id, weight) typles
+        producers = []
+        for dep in self.dependencies.values():
+            if dep.target_node == input_node_id and dep.weight > min_weight:
+                # find wiich hyperedge produces the source
+                for edge_id, edge in self.hyperedges.items():
+                    if dep.source_node in edge.output_nodes:
+                        producers.append((edge_id, min_weight))
+                        break
+
+        return producers
+
+    def get_consumers_for_output(
+            self,
+            output_node_id: UUID,
+            min_weight: float =  0.0
+    ) -> List[Tuple[UUID, float]]:
+        # get all consumer tools that require an output schema
+
+        consumers = []
+        for dep in self.dependencies.values():
+            if dep.source_node == output_node_id and dep.weight >= min_weight:
+                # find which tool consumes the target
+                for edge_id, edge in self.hyperedges.items():
+                    if dep.target_node in edge.input_nodes:
+                        consumers.append((edge_id, dep.weight))
+                        break
+        return consumers
+
+    def build_support_matrix(self) -> np.ndarray:
+        """
+        Build the tool schema support matrix.
+
+        Matrix Dimentions; are ( num_input_nodes, num_hyperedges)
+        Each entry: max support weight from edge outputs to input node
+        """
+        input_nodes = [
+            n for n in self.nodes.values()
+            if n.node_type == NodeType.INPUT_SCHEMA
+        ]
+
+        edge_list = list(self.hyperedges.values())
+
+        support_matrix = np.zeros((len(input_nodes), len(edge_list)))
+
+        for i, input_node in enumerate(input_nodes):
+            producers = self.get_producers_for_input(input_node.id)
+            for edge_id, weight in producers:
+                edge_index = next(
+                    idx for idx, e in enumerate(edge_list)
+                    if e.id == edge_id
+                )
+                support_matrix[i, edge_index] = max(support_matrix[i, edge_index], weight)
+
+        return support_matrix
+            
+
+
+
+
