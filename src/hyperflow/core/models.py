@@ -92,7 +92,7 @@ class Node(BaseModel):
         return v
 
     def to_network_node(self) -> Dict[str, Any]:
-        """convert to networkX node attributes"""
+        """convert node attributes to networkx"""
         return {
             'name': self.name,
             'type': self.node_type.value,
@@ -330,7 +330,49 @@ class ToolSchemaHypergraph(BaseModel):
                 support_matrix[i, edge_index] = max(support_matrix[i, edge_index], weight)
 
         return support_matrix
-            
+
+    def get_subgraph(
+            self,
+            edge_ids: Set[UUID]
+    ) -> 'ToolSchemaHypergraph':
+        """
+        Extract a subgraph induced by a set of hyperedges. - used to create context graphs and support graphs
+
+        """    
+        # get all nodes referenced by the edges
+        node_ids = set()
+        for edge_id in edge_ids:
+            edge = self.hyperedges[edge_ids]
+            node_ids.update(edge.input_nodes)
+            node_ids.update(edge.output_nodes)
+
+        # get all dependencies between the nodes
+        deps = {
+            dep_id: dep for dep_id, dep in self.dependencies.items()
+            if dep.source_node in node_ids and dep.target_node in node_ids
+        }
+
+        # subgraph building
+        subgraph = ToolSchemaHypergraph(
+            nodes={nid: self.nodes[nid] for nid in node_ids},
+            hyperedges={eid: self.hyperedges[eid] for eid in edge_ids},
+            dependencies=deps
+        )
+
+        return subgraph
+
+    def to_json(self) -> str:
+        # serialize to json
+        return self.model_dump_json(indent=2)
+
+    @classmethod
+    def from_json(self, json_str: str) -> 'ToolSchemaHypergraph':
+        # deserialize from json
+        data = json.load(json_str)
+        return cls(**data)
+    
+
+    
 
 
 
