@@ -370,7 +370,101 @@ class ToolSchemaHypergraph(BaseModel):
         # deserialize from json
         data = json.load(json_str)
         return cls(**data)
-    
+
+    def to_network(self):
+        """
+        Covert to NetworkX MultiDiGraph for visualization.
+        This enables:
+        - Graph algorithms
+        - Visualization with matplotlib/plotly
+        - Integration with networkx analysis tools
+        
+        Returns a NetworkX MultiDiGraph where:
+        - Nodes represent schema nodes (with node attributes)
+        - Hyperedges are represented as bipartite edges
+        - Dependencies are represented as edges between schema nodes
+        """
+        import networkx as nx
+
+        G = nx.MultiDiGraph()
+
+        #add nodes
+        for node_id, node in self.nodes.items():
+            G.add_node(str(node_id), **node.to_network_node)
+
+            # add hyperedge connections
+            for edge_id, edge in self.hyperedges.items():
+                edge_attrs = edge.to_network_edge
+
+                # connect each input and output node thorugh the tool
+                for input_id in edge.input_nodes:
+                    for output_id in edge.output_nodes:
+                        G.add_edge(
+                            str(input_id), 
+                            str(output_id), 
+                            **edge_attrs,
+                            edge_type='hyperedge'
+                    )
+                        
+        for dep in self.dependencies.values():
+            G.add_edge(
+                str(dep.source_node),
+                str(dep.target_node),
+                weight=dep.weight,
+                edge_type='dependency',
+                verfied=dep.verified
+            ) 
+
+        return G
+
+    def validate(self) -> List[str]:
+        # validate the integrity of hypergraph
+
+        issues = []
+
+        # check if all nodes referenced by hyperedges exist
+        for edge in self.hyperedges.values():
+            for node_id in edge.input_nodes | edge.output_nodes:
+                if node_id not in self.nodes:
+                    issues.append(
+                        f"Hyperedge {edge.name} references"
+                        f"missing node {node_id}"
+                    )
+
+        # check if all dependencies references the existing nodes
+        for dep in self.dependencies.values():
+            if dep.source_node not in self.nodes:
+                issues.append(
+                    f"Dependency {dep.id} references "
+                    f"missing source node {dep.source_node}"
+                )
+            if dep.target_node not in self.nodes:
+                issues.append(
+                    f"Dependency {dep.id} references "
+                    f"missing target node {dep.target_node}"
+                )
+
+        # check the consistency of the dependency
+        for dep in self.dependencies.values():
+            source_node = self.nodes[dep.source_node]
+            target_node = self.nodes[dep.target_node]
+
+
+            # Effects/conditons should only connect to efffects/conditions
+            if (source_node.node_type in [NodeType.EFFECT and NodeType.CONDITION] and 
+                target_node.node_type not in [NodeType.EFFECT, NodeType.CONDITION]):
+                issues.append(
+                    f"Dependency {dep.id} connects effect/condition "
+                    f"to non-effect/condition node"
+                )
+
+        return issues
+
+
+                        
+
+
+
 
     
 
