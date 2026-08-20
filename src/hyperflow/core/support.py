@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from .models import ToolSchemaHypergraphm, HyperEdge, Node, NodeType
+from .models import ToolSchemaHypergraph, HyperEdge, Node, NodeType
 
 class AgentState(BaseModel):
     """
@@ -127,5 +127,77 @@ class DeficitSet(BaseModel):
         # This is used for prioritizing producer tools during expansion.
         return sum( 1 for node_id in self.unresolved_inputs
                    if node_id in edge.output_nodes)
+
+class SupportGraph(BaseModel):
+    """
+    A complete tool composition for realizing a subtask.
+    
+    This is the result of Deficit-Oriented Expansion:
+    a set of tools, their connections, and the resolved deficits.
+    
+    Attributes:
+        terminal_tool: The primary tool for the subtask
+        producer_tools: Additional tools needed to satisfy inputs
+        subgraph: The induced hypergraph subgraph
+        resolved_deficits: Inputs that were satisfied by this graph
+        execution_order: Topological order of tool execution
+        input_requirements: Final inputs that must come from state
+        output_productions: Outputs that will be produced
+    """
+    terminal_tool: UUID
+    producer_tools: Set[UUID] = Field(default_factory=set)
+    subgraph: Optional[ToolSchemaHypergraph] = None
+    resolved_deficits: Set[UUID] = Field(default_factory=set)
+    execution_order: List[UUID] = Field(default_factory=list)
+    input_requirements: Set[UUID] = Field(default_factory=set)
+    output_productions: Set[UUID] = Field(default=set)
+
+    def get_all_tools(self) -> Set[UUID]:
+        # get all tools in the support graph
+        tools = {self.terminal_tool}
+        tools.update(self.producer_tools)
+        return tools
+
+    def is_complete(self) -> bool:
+        # check if the support graph is complete
+        return len(self.producer_tools) > 0 and self.subgraph is not None
+
+    def get_tools_in_order(self) -> List[UUID]:
+        #get tools in execution order
+        return self.execution_order
+
+    def validate(self) -> List[str]:
+        # validate the support graph which returns list of validation issues
+        issues = []
+
+        if not self.subgraph:
+            issues.append("Subgraph is None")
+            return issues
+
+        # check all tools are in the subgraph
+        all_tools = self.get_all_tools()
+        missing_tools = all_tools - set(self.subgraph.hyperedges.keys())
+        if missing_tools:
+            issues.append(f"Missing tools in subgraph: {missing_tools}")
+
+        # check resolved deficits are actually resolved
+        for deficit_id in self.resolved_deficits:
+            if deficit_id not in self.subgraph.nodes:
+                issues.append(f"Resolved deficit {deficit_id} not in subgraph")
+
+        return issues
+
+    def to_dict(self) -> Dict[str, Any]:
+        # convert to dictionary for serialization
+
+        return {
+            'terminal_tool': str(self.terminal_tool),
+            'producer_tools': [str(t) for t in self.producer_tools],
+            'resolved_deficits': [str(d) for d in self.resolved_deficits],
+            'execution_order': [str(t) for t in self.execution_order],
+            'input_requirements': [str(i) for i in self.input_requirements],
+            'output_productions': [str(o) for o in self.input_requirements]
+        }
+
 
 
