@@ -1,11 +1,12 @@
-from dataclasses import Field
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set 
 from uuid import UUID
 
-from pydantic import BaseModel
 
-from .models import ToolSchemaHypergraph, HyperEdge, Node, NodeType
+from pydantic import BaseModel, Field
+
+from .models import ToolSchemaHypergraph, HyperEdge
 
 class AgentState(BaseModel):
     """
@@ -198,6 +199,51 @@ class SupportGraph(BaseModel):
             'input_requirements': [str(i) for i in self.input_requirements],
             'output_productions': [str(o) for o in self.input_requirements]
         }
+
+@dataclass
+class SupportGraphCandidate:
+    """
+    A candidate support graph during beam search.
+    
+    Used in Deficit-Oriented Expansion to maintain
+    multiple expansion paths.
+    """
+    tools : Set[UUID] = field(default_factory=set)
+    deficits: DeficitSet = field(default_factory=DeficitSet)
+    subgraph: Optional[ToolSchemaHypergraph] = None
+    score: float = 0.0
+    depth: int = 0
+
+    def get_tools_ordered(self) -> List[UUID]:
+        # get tools in a deterministic order
+        return sorted(list(self.tools))
+
+    def add_tool(self, tool_id: UUID) -> None:
+        # add a tool to the candidate
+        self.tools.add(tool_id)
+
+    def is_complete(self) -> bool:
+        # check if this candidate is complete
+        return self.deficits.is_empty()
+
+    def compare_to(self, other: 'SupportGraphCandidate') -> int:
+        # compare two candidates for sorting.
+        # returns -1 if this is better and 1 if the other is better and 0 if equal
+        #first compare by number of defitits 
+        if self.deficits.get_deficit_score() != other.deficits.get_deficit_score():
+            return -1 if self.deficits.get_deficit_score() < other.deficits.get_deficit_score() else 1
+
+        # then by score ( higher is better)
+        if self.score != other.score:
+            return -1 if self.score > other.score else 1
+
+        # then by depth(the shallower the better)
+        if self.depth != other.depth:
+            return -1 if self.depth < other.depth else 1
+
+        return 0
+        
+
 
 
 
