@@ -93,4 +93,39 @@ class DeficitSet(BaseModel):
 
         self.unresolved_inputs.add(input_node_id)
 
+        if input_node_id not in self.required_by:
+            self.required_by[input_node_id] = set()
+        self.required_by[input_node_id].add(required_by_edge)
+
+    def resolve(self, input_node_id: UUID) -> None:
+        # remove a deficit as resolved
+        self.unresolved_inputs.discard(input_node_id)
+        self.required_by.pop(input_node_id, None)
+
+    def resolve_multiple(self, input_node_ids: Set[UUID]) -> None:
+        # remove multiple deficits
+        for node_id in input_node_ids:
+            self.resolve(node_id)
+    def is_empty(self) -> bool:
+        # check if there are no unresolved deficits
+        return len(self.unresolved_inputs) == 0
+
+    def get_deficit_score(self) -> int:
+        # get the number of unresolved deficits
+        return len(self.unresolved_inputs)
+
+    def to_binary_vector(self, input_node_ids: List[UUID]) -> List[int]:
+        """
+        Convert to binary vector for scoring. 
+        This will return a list of 1s and 0s matching the input_node_ids order.
+        """
+        input_set = set(input_node_ids)
+        return [1 if nid in self.unresolved_inputs else 0 for nid in input_set]
+
+    def overlaps_with(self, edge: HyperEdge) -> int: 
+        # calculate overlap between this deficit set and edge's outputs.
+        # This is used for prioritizing producer tools during expansion.
+        return sum( 1 for node_id in self.unresolved_inputs
+                   if node_id in edge.output_nodes)
+
 
