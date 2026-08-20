@@ -21,7 +21,7 @@ Production Considerations:
 - Support matrices are precomputed for performance 
 """
 
-from typing import Dict, List, Optional, Set, Any, Union
+from typing import Dict, List, Optional, Set, Any, Union, Tuple
 from enum import Enum
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -460,8 +460,100 @@ class ToolSchemaHypergraph(BaseModel):
 
         return issues
 
+class SupportMatrix:
+    """
+    Precomputed support matrix for fast lookup
+    This wraps the numpu matrix and provides convenient methods
+    for retriving producter tools ducring Deficit-oriented expansion.
+    
+    Attributes:
+        matrix: (num_input_nodes, num_hyperedges) numpy array
+        input_node_ids: List of input node IDs corresponding to rows
+        hyperedge_ids: List of hyperedge IDs corresponding to columns
+    """
 
-                        
+    def __init__(self,
+                 matrix: np.ndarray,
+                 input_node_ids: List[UUID],
+                 hyperedge_ids: List[UUID]):
+        self.matrix = matrix
+        self.input_node_ids = input_node_ids
+        self.hyperedge_ids = hyperedge_ids
+
+        # build lookup indices
+        self.input_index = {nid: i for i, nid in enumerate(input_node_ids)}
+        self.edge_index = {eid: i for i, eid in enumerate(hyperedge_ids)}
+
+
+    def get_producers(
+            self,
+            input_node_id: UUID,
+            min_weight: float = 0.0
+    ) -> List[Tuple[UUI, float]]:
+
+        """ get producer tools for an input schema with weights"""
+
+        if input_node_ids not in self.input_index:
+            return []
+
+        row = self.input_index[self.input_node_id]
+        scores = self.matrix[row]
+
+        producers = []
+
+        for col, score in enumerate(scores):
+            if score >= min_weight:
+                producers.append(self.hyperedge_ids[col], float(score))
+
+        return sorted(producers, key=lambda x:x[1], reverse=True)
+
+    def get_top_producers(
+            self, 
+            input_node_id: UUID,
+            k: int = 5,
+            min_weight: float = 0.0
+    ) -> List[Tuple[UUID, float]]:
+
+        """ get the top k producer tool for an input schema"""
+
+        producers = self.get_producers(input_node_id, min_weight)
+        return producers[:k]
+
+
+    def get_support_score(
+            self,
+            hyperedge_id: UUID,
+            input_node_id: UUID
+    ) -> float:
+        """get the supporting scores for a specific tool-input pair"""
+
+        if hyperedge_id not in self.edge_index:
+            return 0.0
+        if input_node_id not in self.input_index:
+            return 0.0
+
+        row = self.input_index[input_node_id]
+        col = self.edge_index[self.hyperedge_id]
+        return float(self.matrix[row, col])
+
+    def get_support_vector(
+            self,
+            input_node_id: UUID
+    ) -> List[float]:
+
+        """get the full support vector for an input schema."""
+        if input_node_id not in self.input_index:
+            return []
+
+        row = self.input_index[self.input_node_id]
+        return self.matrix[row].tolist()
+
+
+
+        
+        
+
+            
 
 
 
