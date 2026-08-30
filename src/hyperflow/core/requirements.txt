@@ -1,4 +1,0 @@
-
-pydantic==2.13.4
-numpy==2.5.1
-networkx==3.61
