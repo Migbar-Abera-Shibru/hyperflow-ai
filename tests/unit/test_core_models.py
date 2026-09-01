@@ -1,5 +1,4 @@
-"""  """
-
+""" Unit testes for core hypergraph models.py """
 
 from uuid import uuid4
 
