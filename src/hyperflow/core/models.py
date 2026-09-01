@@ -250,7 +250,7 @@ class ToolSchemaHypergraph(BaseModel):
         self.hyperedges[edge.id]= edge
         self._edge_name_index[edge.name] = edge.id
 
-    def add_dependenc(self, dep: Dependency) -> None:
+    def add_dependency(self, dep: Dependency) -> None:
         # validate if node exists
         if dep.source_node not in self.nodes:
             raise ValueError(f"Source node {dep.source_node} not found")

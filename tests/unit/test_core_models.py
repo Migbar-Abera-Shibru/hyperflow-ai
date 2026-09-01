@@ -3,9 +3,10 @@
 
 from uuid import uuid4
 
+import numpy as np
 import pytest
 
-from hyperflow.core.models import Dependency, HyperEdge, Node, NodeType, ToolSchemaHypergraph
+from hyperflow.core.models import Dependency, HyperEdge, Node, NodeType, SupportMatrix, ToolSchemaHypergraph
 
 
 class TestNode:
@@ -181,9 +182,124 @@ class TestToolSchemaHypergraph:
             target_node=self.input1.id,
             weight=0.9
         )
+        self.hypergraph.add_dependency(dep)
+        assert dep.id in self.hypergraph.dependencies
 
     def test_get_producers_for_input(self):
         """Test getting the producer tools """
+        # add dependecy from output to input
+
+        dep = Dependency(
+            source_node= self.output1.id,
+            target_node=self.input1.id,
+            weight=0.9
+        )
+        self.hypergraph.add_dependency(dep)
+
+        producers = self.hypergraph.get_producers_for_input(self.input1.id)
+        assert len(producers) == 1
+        assert producers[0][0] == self.payment_tool.id
+
+    def test_build_support_matrix(self):
+        """ test for support matrix building"""
+        dep = Dependency(source_node=self.output1.id,
+                         target_node=self.input1.id,
+                         weight=0.9)
+        self.hypergraph.add_dependency(dep)
+
+        matrix = self.hypergraph.build_support_matrix()
+
+        #should have two input node and 1 hyperedge 
+        assert matrix.shape == (2,1)
+
+        # check the support scores
+        assert matrix[0,0] == 0.9 # input1 support from payment_tool
+        assert matrix[1,0] == 0.0 # input2 has no support
+
+    def test_get_subgraph(self):
+        """ Test the subgraph extraction"""
+        # create a second tool
+
+        input3 = Node(
+            name="user_name",
+            node_type=NodeType.INPUT_SCHEMA,
+            description="User name"
+        )
+        self.hypergraph.add_node(input3)
+
+        second_tool = HyperEdge(
+            name="get_user_info",
+            description="Get user information",
+            input_nodes = {input3.id},
+            output_nodes={self.input1.id}
+        )
+        self.hypergraph.add_hyperedge(second_tool)
+
+        # extract the subgraph with just the first tool
+        subgraph = self.hypergraph.get_subgraph({self.payment_tool.id})
+
+        # should only contain nodes from the payment tool
+        expectedd_nodes = {self.input1.id, self.input2.id,
+                         self.output1.id, self.effect1.id}
+        assert set(subgraph.nodes.keys()) == expectedd_nodes
+
+    def test_validate(self):
+        """test the hypergraph validation"""
+        issues = self.hypergraph.validate()
+        assert len(issues) == 0
+
+        # add invalid dependency
+        invalid_node = uuid4()
+        dep = Dependency(
+            source_node = invalid_node,
+            target_node = self.input1.id,
+            weight=0.5
+        )
+        self.hypergraph.add_dependency(dep)
+
+        issues = self.hypergraph.validate()
+        assert len(issues) > 0
+
+    def test_serialization(self):
+        """ test JSON serialization/deserialization"""
+        json_str = self.hypergraph.to_json()
+        loaded = ToolSchemaHypergraph.from_json(json_str)
+
+        # should have the same structure
+        assert len(loaded.nodes) == len(self.hypergraph.nodes)
+        assert len(loaded.hyperedges) == len(self.hypergraph.hyperedges)
+
+
+class TestSupportMatrix:
+    """ Tests for SupportMatrix"""
+
+    def test_support_matrix_lookup(self):
+        """ test support matrix lookups"""
+        input_ids = [uuid4(), uuid4()]
+        edge_ids = [uuid4(), uuid4()]
+
+        matrix = np.array([
+            [0.9, 0.0],
+            [0.5, 0.0]
+        ])
+
+        support = SupportMatrix(matrix, input_ids, edge_ids)
+
+        # test get_producers
+        producers = support.get_producers(input_ids[0])
+        assert producers[0][0] == edge_ids[0]
+        assert producers[0][1] == 0.9
+
+
+        # test get_top_producers
+        top = support.get_top_producers(input_ids[1], k = 1)
+        assert top[0][0] == edge_ids[1]
+        assert top[0][1] == 0.8
+
+        # test get_support_score
+        score = support.get_support_score(edge_ids[0], input_ids[0])
+        assert score == 0.9
+
 
 
     
