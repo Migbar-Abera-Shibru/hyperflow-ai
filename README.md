@@ -173,3 +173,142 @@ python --version
 # Install dependencies
 pip install -r requirements.txt
 ```
+
+---
+
+### Installation
+
+```bash 
+# Clone the repository
+git clone https://github.com/yourusername/hyperflow-ai.git
+cd hyperflow-ai
+
+# Install in development mode
+pip install -e .
+
+# Run the demo
+python -m src.main demo
+```
+
+---
+### Build a Hypergraph from OpenAPI
+ ```bash
+# Parse an OpenAPI spec and build the hypergraph
+python -m src.main build --spec examples/payment_api.json --output hypergraph.json
+```
+
+---
+
+###
+
+use the api
+
+```python
+import requests
+import json
+
+# Plan a task
+response = requests.post(
+    "http://localhost:8000/api/v1/plan",
+    json={
+        "task": "Send $50 to alice@example.com and notify bob@example.com"
+    }
+)
+plan = response.json()
+print(f"Plan ID: {plan['plan_id']}")
+print(f"Subtasks: {plan['subtask_count']}")
+
+# Execute the plan
+response = requests.post(
+    "http://localhost:8000/api/v1/execute",
+    json={
+        "plan_id": plan['plan_id'],
+        "task": "Send $50 to alice@example.com",
+        "dag": plan['dag']
+    }
+)
+result = response.json()
+print(f"Status: {result['status']}")
+print(f"Results: {result['results']}")
+
+```
+
+## How It Works
+
+### 1. Tool-Schema Hypergraph
+We model tools as hyperedges connecting input schemas to output schemas:
+ ```python
+ # Each tool becomes a hyperedge
+payment_tool = HyperEdge(
+    name="send_payment",
+    input_nodes={recipient_id, amount, currency},
+    output_nodes={transaction_id, status}
+)
+
+# Dependencies are port-level links
+dependency = Dependency(
+    source_node=get_user.user_id,    # Output from getUser
+    target_node=send_payment.recipient_id,  # Input to sendPayment
+    weight=0.95
+)
+```
+This fine-grained modeling enables:
+
+- Exact data flow tracking — know exactly which output goes to which input
+
+- Missing input detection — identify what's missing before execution
+
+- State-aware expansion — only add producers for what's actually needed
+
+### 2. Deficit-Oriented Expansion(DOE)
+The core algorithm (from the HyperAgent paper):
+```python
+def deficit_oriented_expansion(terminal_tool, state):
+    """
+    Starting from a terminal tool, find all prerequisite tools
+    needed to execute it with the current state.
+    """
+    # Step 1: What inputs are missing?
+    deficits = compute_deficits(terminal_tool, state)
+    
+    # Step 2: Beam search to find producers
+    candidates = [(terminal_tool, deficits)]
+    
+    while deficits:
+        # Find tools that resolve deficits
+        producers = find_producers(deficits)
+        
+        # Score by overlap with deficit set
+        scored = score_by_overlap(producers, deficits)
+        
+        # Prune to beam width
+        candidates = prune(scored, beam_width=5)
+        
+        # Update deficits with producer requirements
+        deficits = compute_deficits(candidates)
+    
+    return complete_support_graph(candidates)
+
+```
+### 3. State-Conditioned Execution
+The execution engine adapts to what's already available:
+
+```python
+# Initial state: We already have Alice's email
+state = AgentState(bindings={"alice_email": "alice@example.com"})
+
+# Support graph for "send payment to Alice"
+support_graph = doe.expand(send_payment, state)
+# → Only need to get user_id (email is already available)
+
+# The engine knows to skip the email fetch
+execution_order = [
+    "get_user_by_email",  # Only this is needed
+    "send_payment"
+]
+
+```
+
+
+
+
