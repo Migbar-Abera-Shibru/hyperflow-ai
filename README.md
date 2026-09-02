@@ -161,5 +161,15 @@ sequenceDiagram
     Executor-->>API: ExecutionResult
     API-->>User: Results + metrics
 
+```
+--- 
 
+### Start
+#### Prerequisites
+```bash
+# Python 3.11+
+python --version
 
+# Install dependencies
+pip install -r requirements.txt
+```

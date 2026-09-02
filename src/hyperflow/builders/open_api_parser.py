@@ -6,6 +6,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 import requests
@@ -177,6 +178,89 @@ class OpenAPIParser:
             logger.info(f"Parsed {len(tools)} tools from OpenAPI spec")
             return tools
 
+        def _extract_base_url(self, spec: Dict[str, Any]) -> None:
+            """ Extract the base url for the API"""
+            servers = spec.get('servers', [])
+            if servers:
+                server_url = servers[0].get('url', '')
+                parsed = urlparse(server_url)
+                self.base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+        def _validate_spec(self, spec: Dict[str, Any]) -> None:
+            """ validation for OpenAPI specification"""
+            # check for required fields
+            required_fields = ['openapi', 'info', 'paths']
+            for field in required_fields:
+                if field not in spec:
+                    raise ValueError(f"Missing requried field: {field}")
+
+
+            #check openAI version
+            version = spec.get('openapi', '')
+            if not version.startswith('3.'):
+                raise ValueError(f"Unsupported OpenAPI version: {version}")
+
+        def _parse_operation(
+                self,
+                path: str,
+                method: str,
+                operation: Dict[str, Any]
+        ) -> Optional[ToolDefinition]:
+            """
+            Parse a single operation from the OpenAPI spec into a ToolDefinition.
+            """
+            try:
+                # extract basic info
+                tool = ToolDefinition(
+                    name = self._generate_tool_name(path, method, operation),
+                    path=path,
+                    method=method.upper(),
+                    operation_id=operation.get('operationId'),
+                    summary=operation.get('summary',''),
+                    description=operation.get('description',''),
+                    tags=operation.get('tags', [])
+                )
+
+                #parse parameters
+                parameters = operation.get('parameters', [])
+                for param in parameters:
+                    if '$ref' in param:
+                        param = self._resolve_reference(param['$ref'])
+                    schema = self._parse_parameter(param, path, method)
+                    if schema:
+                        tool.input_parameters.append(schema)
+
+                # parse request body
+                request_body = operation.get('requestBody')
+                if request_body:
+                    if "$ref" in request_body:
+                        request_body= self._resolve_reference(request_body['$ref'])
+                    body_schemas = self._parse_request_body(request_body)
+                    tool.input_parameters.extend(body_schemas)
+
+                # parse responses
+                responses = operation.get('responses', [])
+                for status_code, response in responses.items():
+                    if '$ref' in response:
+                        response = self._resolve_reference(response['$ref'])
+                    if status_code.startswith('2'):
+                        tool.output_schemas[status_code] = self._parse_response(response)
+
+                return tool
+
+
+            except Exception as e: 
+                logger.error(f" Error parsing operation {method} {path}: {e}")
+                return None
+
+                
+
+
+
+
+
+            
+            
 
 
 
