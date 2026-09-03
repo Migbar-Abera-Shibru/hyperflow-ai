@@ -46,10 +46,10 @@ Agent: "Let me get the user_id first"
 text
 
 This leads to:
-- ❌ **Wasted API calls** — exploring dead ends
-- ❌ **High token consumption** — repeated reasoning loops
-- ❌ **No parallel execution** — sequential everything
-- ❌ **Brittle** — fails when tools change
+-  **Wasted API calls** — exploring dead ends
+-  **High token consumption** — repeated reasoning loops
+-  **No parallel execution** — sequential everything
+-  **Brittle** — fails when tools change
 
 ### The HyperFlow AI Solution
 
@@ -463,9 +463,9 @@ mypy src/
 ---
 ```
 <div align="center">
-Built with ❤️ by AI Engineers, for AI Engineers
+Built by AI Engineers, for AI Engineers
 
-⭐ Star us on GitHub if you find this useful!
+Star us on GitHub if you find this useful!
 
 </div> 
 ```
