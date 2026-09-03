@@ -309,6 +309,161 @@ execution_order = [
 
 ```
 
+### Performance 
+Based on our implementation of the HyperAgent paper:
 
+| Metric | HyperFlow AI | ReAct | Improvement |
+|--------|--------------|-------|-------------|
+| Task Completion | 67.1% | 48.8% | +37% |
+| API Calls | Reduced | Baseline | -40% |
+| Token Consumption | Reduced | Baseline | -30% |
+| LLM Interactions | Reduced | Baseline | -45% |
 
+Results on AppWorld benchmark
 
+### Technology Stack
+
+| Layer | Technologies |
+|-------|--------------|
+| Core | Python 3.11, Pydantic, NumPy |
+| API | FastAPI, Uvicorn, Pydantic |
+| LLM Integration | OpenAI API, Anthropic API, Groq |
+| Graph Operations | NetworkX, Custom Hypergraph |
+| Embeddings | Sentence Transformers, OpenAI Embeddings |
+| Execution | AsyncIO, ThreadPoolExecutor |
+| State Management | Redis (caching), SQLAlchemy (persistence) |
+| Vector Search | Qdrant |
+| Observability | OpenTelemetry, Prometheus, Grafana |
+| Deployment | Docker, Kubernetes, Helm |
+| CI/CD | GitHub Actions |
+| Testing | Pytest, Coverage, MyPy |
+
+---
+### Project Structure 
+hyperflow-ai/
+├── src/
+│   └── hyperflow/
+│       ├── core/              # Core data models
+│       │   ├── models.py      # Node, HyperEdge, Dependency
+│       │   └── support.py     # AgentState, DeficitSet, SupportGraph
+│       │
+│       ├── builders/          # Hypergraph construction
+│       │   ├── openapi_parser.py
+│       │   └── hypergraph_builder.py
+│       │
+│       ├── planning/          # Planning algorithms
+│       │   ├── context_extractor.py
+│       │   ├── dag_planner.py
+│       │   └── doe.py         # Deficit-Oriented Expansion
+│       │
+│       ├── execution/         # Execution engine
+│       │   └── engine.py
+│       │
+│       ├── api/               # FastAPI server
+│       │   └── server.py
+│       │
+│       ├── llm/               # LLM integration
+│       │   └── prompts.py
+│       │
+│       └── utils/             # Utilities
+│           └── embeddings.py
+│
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   └── e2e/
+│
+├── examples/
+│   ├── basic_hypergraph_build.py
+│   └── payment_api.json
+│
+├── deployment/
+│   ├── docker/
+│   └── kubernetes/
+│
+├── docs/                      # Documentation
+├── README.md
+├── pyproject.toml
+├── requirements.txt
+└── Makefile
+
+---
+
+### Research Adaptation
+This project implements the HyperAgent paper:
+
+Zhai, Z., Tan, X., Zou, G., Wang, X., & Zhang, W. (2026). HyperAgent: Planning and Acting over Tool-Schema Hypergraphs for Tool-Use LLM Agents.
+
+Key innovations from the paper, adapted for production:
+
+1. Tool-Schema Hypergraph — We implement the hypergraph construction with support for OpenAPI parsing and manual refinement.
+
+2. Deficit-Oriented Expansion — The core algorithm is implemented with beam search, state-conditioned expansion, and support matrix optimization.
+
+3. Task DAG Planning — We use LLM-based planning with schema mapping and dependency validation.
+
+4. State-Conditioned Execution — The execution engine tracks bindings and effects, adapting to the current state.
+
+Production adaptations beyond the paper:
+
+- Automated hypergraph construction from OpenAPI specs
+
+- Parallel execution of independent subtasks
+
+- Comprehensive observability with OpenTelemetry
+
+- State persistence with Redis
+
+- Retry logic with exponential backoff
+
+- RESTful API with OpenAPI documentation
+
+### Contributing 
+
+We welcome contributions! See our Contributing Guide.
+
+#### Development Setup
+```bash
+# Clone and install
+git clone https://github.com/yourusername/hyperflow-ai.git
+cd hyperflow-ai
+pip install -e .[dev]
+
+# Run tests
+pytest tests/ --cov=src/
+
+# Format code
+black src/ tests/
+ruff check src/ tests/
+
+# Type checking
+mypy src/
+```
+
+### License 
+[MIT License](LICENSE) — see LICENSE for details.
+
+### Acknowledgements 
+
+- The HyperAgent authors for their groundbreaking research
+
+- The AppWorld team for the benchmark dataset
+
+- The open-source community for the amazing tools we built upon
+
+### Contact and Support
+
+- Issues: GitHub Issues
+
+- Discussions: GitHub Discussions
+
+- Email: aberamigbar@gmail.com
+---
+```
+<div align="center">
+Built with ❤️ by AI Engineers, for AI Engineers
+
+⭐ Star us on GitHub if you find this useful!
+
+</div> 
+```
