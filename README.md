@@ -340,6 +340,7 @@ Results on AppWorld benchmark
 
 ---
 ### Project Structure 
+```
 hyperflow-ai/
 ├── src/
 │   └── hyperflow/
@@ -386,6 +387,7 @@ hyperflow-ai/
 ├── pyproject.toml
 ├── requirements.txt
 └── Makefile
+```
 
 ---
 
