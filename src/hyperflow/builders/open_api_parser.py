@@ -253,6 +253,179 @@ class OpenAPIParser:
                 logger.error(f" Error parsing operation {method} {path}: {e}")
                 return None
 
+        def _generate_tool_name(
+                self,
+                path: str,
+                method: str,
+                operation: Dict[str, Any]
+        ) -> str:
+            """ Generate a unique, readable tool name"""
+            # Prefer operation ID
+            if 'operationId' in operation:
+                return operation['operationId']
+
+            # build from path and method 
+            path_parts = [p for p in path.split('/') if p and not p.startswith('{')]
+            path_parts.append(method.upper())
+
+            # Camelcase the parts
+            tool_name = ''.join(p.capitalize()for p in path_parts)
+            return tool_name
+
+        def _parse_parameter(
+                self,
+                param: Dict[str, Any],
+                path: str,
+                method: str
+        ) -> Optional[ParameterSchema]:
+
+            """
+            Parse an OpenAPI parameter.
+            """
+
+            param_in = param.get('in', 'body')
+            param_name = param.get('name', '')
+
+            # extract schema 
+            schema = param.get('schema', {})
+            if '$ref' in schema:
+                schema = self._resolve_reference(schema['$ref'])
+
+            # determine the type
+            param_type = schema.get('type', 'string')
+            if param_type == 'array':
+                # try to get item type
+                items = schema.get('items', {})
+                if '$ref' in items:
+                    items = self._resolve_reference(items['$ref'])
+                param_type = f"array[{items.get('type', 'any')}]"
+
+            return ParameterSchema(
+                name=param_name,
+                type=param_type,
+                description=param.get('description', ''),
+                required=param.get('required', False),
+                schema=schema,
+                location=param_in
+            )
+
+        def _parse_request_body(
+                self,
+                request_body: Dict[str, Any]
+        ) -> List[ParameterSchema] :
+            """ Parse a requt body into parameter schemas"""
+
+            schemas = []
+
+            content = request_body.get('content', {})
+            for media_type, media_spec in content.items():
+                schema = media_spec.get('schema', {})
+
+                # handle refs
+                if '$ref' in schema:
+                    schema = self._resolve_reference(schema['$ref'])
+
+                # for object types, extract each property as a paramter
+                if schema.get('type') == 'object':
+                    properties = schema.get('properties', {})
+                    required = schema.get('required', [])
+
+                    for prop_name, prop_schema in properties.items():
+                        if '$ref' in prop_schema:
+                            prop_schema = self._resolve_reference(prop_schema['$ref'])
+
+
+                        schemas.append(ParameterSchema(
+                            name=prop_name,
+                            type=prop_schema.get('type', 'string'),
+                            description=prop_name in required,
+                            schema=prop_schema,
+                            location='body'
+                        ))
+
+                else:
+                    # simple type
+                    schemas.append(ParameterSchema(
+                        name='body',
+                        type=schema.get('type', 'object'),
+                        description=request_body.get('description', ''),
+                        required=request_body.get('required', ''),
+                        schema=schema,
+                        location='body'
+                    ))
+
+            return schemas
+
+        def _parse_response(
+                self,
+                response: Dict[str, Any]
+        ) -> Dict[str, Any]:
+            """ parse a response into a schema"""
+
+            schema = {}
+
+            content = response.get('content', {})
+            for media_type, media_spec in content.items():
+                schema = media_spec.get('schema', {})
+
+                if '$ref' in schema:
+                    schema = self._resolve_reference(schema['$ref'])
+                break # use the first media type
+
+            return schema
+
+        def _resolve_reference(self, ref: str) -> Dict[str, Any]:
+            """ resolve a json reference 
+            support both local ($ref: "#/components/schemas/User") and remote references.
+            """
+            if ref.startswith("#"):
+                # local reference
+                path_parts = ref[2:].split('/')
+                current = self.spec
+                for part in path_parts:
+                    current = current.get(part, {})
+                return current
+
+
+            # for remote reference
+            # cache resolved refs for simplicity
+            if ref not in self.resolved_refs:
+                try:
+                    response = requests.get(ref)
+                    response.raise_for_status()
+                    self.resolved_refs[ref] = response.json()
+                except Exception as e:
+                    logger.warning(f"Failed to resolve remote reference {ref}: {e}")
+                    return {}
+
+            return self.resolved_refs.get(ref, {})
+
+        def parse_with_annotations(
+                self,
+                spec: Dict[str, Any],
+                annotations: Dict[str, Dict[str, Any]]
+        ) -> List[ToolDefinition]:
+
+            """
+            Parse an OpenAPI spec with manual annotations.
+        
+            Annotations can override or enhance the automatic parsing.
+            
+            Args:
+                spec: OpenAPI specification
+                annotations: {
+                    "tool_name": {
+                        "description": "Custom description",
+                        "inputs": {"param_name": {"description": "..."}},
+                        "outputs": {"response": {"schema": {...}}}
+                    }
+                }
+            
+            """
+
+            
+
+
                 
 
 
