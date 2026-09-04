@@ -423,7 +423,32 @@ class OpenAPIParser:
             
             """
 
-            
+            tools = self.parse_dict(spec)
+
+            for tool in tools:
+                if tool.name in annotations:
+                    tool_anno = annotations[tool.name]
+
+                    # override description
+                    if 'description' in tool_anno:
+                        tool.description = tool_anno['description']
+
+                    # override input descriptions
+                    if 'inputs' in tool_anno:
+                        for param in tool.input_parameters:
+                            if param.name in tool_anno['inputs']:
+                                param.description = tool_anno['inputs'][param.name].get(
+                                    'description', param.description
+                                )
+
+                                # override required status
+                                if 'required' in tool_anno['inputs'][param.name]:
+                                    param.required = tool_anno['inputs'][param.name]['required']
+
+            return tools
+
+class Schema_Extractor:
+    
 
 
                 
