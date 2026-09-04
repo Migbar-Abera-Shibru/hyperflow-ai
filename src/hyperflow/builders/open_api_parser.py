@@ -5,10 +5,11 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
+from ..core.models import Node, NodeType
 import requests
 import yaml
 
@@ -448,7 +449,131 @@ class OpenAPIParser:
             return tools
 
 class Schema_Extractor:
+    """
+    Extract schema nodes from tool definitions.
     
+    Converts OpenAPI-parameter schemas into our Node model.
+    """
+
+    @staticmethod
+    def extract_input_nodes(tool: ToolDefinition) -> List[Node]:
+        """ Extract input schema nodes from a tool definition"""
+        nodes = []
+
+        for param in tool.input_parameters:
+            node = Node(
+                name=f"{tool.name}_{param.name}",
+                node_type=NodeType.INPUT_SCHEMA,
+                description=param.description or f"Input: {param.name}",
+                json_schema=param.schema,
+                type_hint=param.type_hint,
+                is_required=param.required,
+                metadata={
+                    'tool_name': tool.name,
+                    'param_name': param.name,
+                    'location': param.location,
+                    'path':tool.path,
+                    'method': tool.method
+                }
+
+            )
+            nodes.append(node)
+        return nodes
+
+    @staticmethod
+    def extract_output_nodes(tool:ToolDefinition) -> List[Node]:
+        """ Extract output schema nodes from a tool definition"""
+        nodes = []
+
+        for status_code, schmea in tool.output_schemas.items():
+            # for object outputs, extract each property
+            if schmea.get(type) == 'object':
+                properties = schmea.get('properties', {})
+                for prop_name, prop_schmea in properties.items():
+                    node = Node(
+                        name=f"{tool.name}_{prop_name}",
+                        node_type=NodeType.OUTPUT_SCHEMA,
+                        description=prop_schmea.get('description', f"Output: {prop_name}"),
+                        json_schema=prop_schmea,
+                        type_hint=prop_schmea.get('type', 'Any'),
+                        is_required=True,
+                        metadata={
+                            'tool_name': tool.name,
+                            'status_code': status_code,
+                            'prop_name': prop_name
+                        }
+                    )
+                    nodes.append(node)
+            else:
+                # simple output
+
+                node = Node(
+                    #simple output
+                    name=f"{tool.name}_output",
+                    node_type=NodeType.OUTPUT_SCHEMA,
+                    description=f"Output from {tool.name}",
+                    json_schema=schmea,
+                    type_hint=schmea.get('type', 'Any'),
+                    is_required=True,
+                    metadata={
+                        'tool_name': tool.name,
+                        'status_code': status_code
+                    }
+                )
+                nodes.append(node)
+        return nodes
+    @staticmethod
+    def infer_dependencies(
+        tools: List[ToolDefinition],
+        similarity_threshold: float = 0.7
+    ) -> List[Tuple[str, str, float]]:
+        """
+        Infer dependencies between tools based on schema matching.
+        
+        Returns list of (source_output_name, target_input_name, weight).
+        """
+        dependencies = []
+
+        # build index of output schemas
+        outputs = {}
+        for tool in tools:
+            for node in Schema_Extractor.extract_output_nodes(tool):
+                outputs[node.name] = node
+
+        # build index of input schemas
+        inputs = {}
+        for tool in tools:
+            for node in Schema_Extractor.extract_input_nodes(tool):
+                inputs[node.name] = node
+
+        # simple type-based matching
+        for input_name, input_node in inputs.items():
+            for output_name, output_node in outputs.items():
+                # if the same tool, skip
+                if input_node.metadata.get('tool_name') == output_node.metadata.get('tool_name'):
+                    continue
+
+                # type matching
+                if input_node.type_hint == output_node.type_hint:
+                    # name similarity
+                    input_words = set(input_node.name.lower().split('_'))
+                    output_words = set(output_node.name.loser().split('_'))
+
+                    # check for common words
+                    common = input_words & output_words
+
+                    if common:
+                        # jaccard similarity
+                        union = input_words | output_words
+                        similarity = len(common) / len(union) if union else 0
+
+                        if similarity >= similarity_threshold:
+                            weight = min(1.0, similarity * 1.2) # Boost a bit
+                            dependencies.append(output_name, input_name, weight)
+
+        return dependencies
+
+        
 
 
                 
