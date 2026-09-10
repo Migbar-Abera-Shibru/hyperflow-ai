@@ -448,7 +448,7 @@ class OpenAPIParser:
 
             return tools
 
-class Schema_Extractor:
+class SchemaExtractor:
     """
     Extract schema nodes from tool definitions.
     

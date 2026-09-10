@@ -24,10 +24,11 @@ Usage:
 """
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+from uuid import UUID
 
-from hyperflow.builders.open_api_parser import ToolDefinition
-from hyperflow.core.models import ToolSchemaHypergraph
+from hyperflow.builders.open_api_parser import SchemaExtractor, ToolDefinition
+from hyperflow.core.models import HyperEdge, Node, NodeType, ToolSchemaHypergraph
 
 
 logger = logging.getLogger(__name__)
@@ -137,4 +138,113 @@ class HypergraphBuilder:
         self._build_support_matrix(hypergraph)
 
         return hypergraph
+
+    def _extract_nodes(
+            self,
+            tool_defs: List[ToolDefinition],
+    ) -> Dict[str, Node]:
+        """
+        Extract all nodes from tool definitions.
         
+        Returns a mapping from node name to Node object.
+        """
+
+        nodes = {}
+
+        for tool in tool_defs:
+            # input nodes
+            for node in SchemaExtractor.extract_input_nodes(tool):
+                nodes[node.name] = node
+
+            # output nodes
+            for node in SchemaExtractor.extract_output_nodes(tool):
+                nodes[node.name] = node
+
+        return nodes
+
+    def _create_hyperedge(
+            self, tool_defs: List[ToolDefinition],
+            nodes_by_name: Dict[str, Node]
+    ) -> Dict[str, HyperEdge]:
+        """
+        Create hyperedges from tool definitions.
+        """
+        edges = {}
+
+        for tool in tool_defs:
+            # get input node ids
+            input_node_ids = set()
+            for param in tool.input_parameters:
+                node_name = f"{tool.name}_{param.name}"
+                if node_name in nodes_by_name:
+                    input_node_ids.add(nodes_by_name[node_name].id)
+
+            # get the output node ids
+            output_node_ids = set()
+            #from explicit output schemas
+            for status_code, schema in tool.output_schemas.items():
+                if schema.get('type') == 'object':
+                    for prop_name in schema.get('properties', {}):
+                        node_name = f"{tool.name}_{prop_name}"
+                        if node_name in nodes_by_name:
+                            output_node_ids.add(nodes_by_name[node_name].id)
+
+                else:
+                    node_name = f"{tool.name}_output"
+                    if node_name in nodes_by_name:
+                        output_node_ids.add(nodes_by_name[node_name].id)
+
+            # ensure we have atleast one output
+            if not output_node_ids and tool.output_schemas:
+                # create a generic output node
+                output_node = Node(
+                    name=f"{tool_name}_output",
+                    node_type=NodeType.OUTPUT_SCHEMA,
+                    description=f"Output from {tool.name}",
+                    json_schema=tool.output_schemas.get('200', {}),
+                    metadata={"tool_name":tool.name}
+                )
+
+                nodes_by_name[output_node.name] = output_node
+                output_node_ids.add(output_node.id)
+
+            # create the hyperedge
+            edge = HyperEdge(
+                name=tool.full_name,
+                description=tool.desciption or tool.summary,
+                input_nodes=input_node_ids,
+                output_nodes=output_node_ids,
+                metadata={
+                    'path': tool.path,
+                    'method': tool.method,
+                    'tags': tool.tags,
+                    'operation_id': tool.operation_id
+                }
+            )
+
+            edges[tool.full_name] = edge
+        return edges
+
+    def _infer_dependencies(
+            self,
+            tool_defs: List[ToolDefinition],
+            nodes_by_name: Dict[str, Node],
+            edges_by_name: Dict[str, HyperEdge],
+    ) -> List[Tuple[UUID, UUID, float]]:
+        """
+        Infer dependencies between nodes.
+        
+        Uses:
+        1. Type matching
+        2. Name similarity
+        3. Semantic similarity (if available)
+        """
+        dependencies = []
+
+        # for each input, find matching outputs
+        for input_name, input_node in nodes_by_name.items()
+
+        
+
+
+
