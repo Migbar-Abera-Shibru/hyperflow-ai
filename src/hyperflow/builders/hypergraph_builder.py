@@ -242,7 +242,38 @@ class HypergraphBuilder:
         dependencies = []
 
         # for each input, find matching outputs
-        for input_name, input_node in nodes_by_name.items()
+        for input_name, input_node in nodes_by_name.items():
+            if input_node.node_type != NodeType.INPUT_SCHEMA:
+                continue
+
+            # skip if this an input to a tool that has no input
+            input_edge_name = input_node.metadata.get('tool_name')
+            if not input_edge_name:
+                continue
+
+            for output_name, output_node in nodes_by_name.items():
+                if output_node.node_type != NodeType.OUTPUT_SCHEMA:
+                    continue
+
+                # skip same tool
+                if input_edge_name == output_node.metadata.get('tool_name'):
+                    continue
+
+                # check type compatability
+                if not self._types_compatable(input_node, output_node):
+                    continue
+
+                # calculate similarity
+                similarity = self._calculate_similarity(input_node, output_node)
+
+                if similarity >= 0.6:
+                    weight = min(1.0, similarity)
+                    dependencies.append(output_node.id, input_node.id, weight)
+
+        return dependencies
+
+
+
 
         
 
