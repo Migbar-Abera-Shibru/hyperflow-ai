@@ -272,6 +272,81 @@ class HypergraphBuilder:
 
         return dependencies
 
+    def _types_compatible(self, input_node: Node, output_node: Node) -> bool:
+        """ check if input and output types are compatible. """
+        # if we have type hints, use them
+        if input_node.type_hint and output_node.type_hint:
+            # convert type hints to sets for matching
+            input_type = input_node.type_hint.lower()
+            output_type = output_node.type_hint.lower()
+
+            # Direct match 
+            if input_type == output_type:
+                return True
+
+            # special cases
+            if input_type == 'str' and output_type in ['str', 'string']:
+                return True
+
+            if input_type == 'int' and output_type in ['int', 'integer']:
+                return True
+
+            if input_type == 'float' and output_type in ['float', 'number']:
+                return True
+
+            if input_type == 'dict' and output_type in ['dict', 'object']:
+                return True
+
+            if input_type == 'list' and output_type in ['list', 'array']:
+                return True
+
+        # fallback to JSON schema types
+        input_schema = input_node.json_schema
+        output_schema = output_node.json_schema
+
+        if input_schema and output_schema:
+            if input_schema.get('type') == output_schema.get('type'):
+                return True
+
+        return False
+
+    def _calculate_similarity(self, input_node: Node, output_node: Node) -> float:
+        """ calculate similarity between an input and output node """
+        # name overlap
+        input_words = set(input_node.name.lower().split('_'))
+        output_words = set(output_node.name.lower().split('_'))
+
+        common = input_words & output_words
+        union = input_words | output_words
+
+        if union:
+            name_similarity = len(common) / len(union)
+        else: 
+            name_similarity = 0.0
+
+        # description overlap ( if descriptions exist)
+        if input_node.description and output_node.description:
+            input_desc_words = set(input_node.description.lower().split())
+            output_desc_words = set(output_node.description.lower().split())
+
+            common_desc = input_desc_words & output_desc_words
+            union_desc = input_desc_words | output_desc_words
+
+            if union_desc:
+                desc_similarity = len(common_desc) / len(union_desc)
+            else: 
+                desc_similarity = 0.0
+
+        else:
+            desc_similarity = 0.0
+
+        # combine similarities 
+        similarity = 0.6 * name_similarity + 0.4 * desc_similarity
+
+        return similarity
+
+    
+
 
 
 
