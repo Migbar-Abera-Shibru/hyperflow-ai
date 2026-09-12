@@ -28,7 +28,7 @@ from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 
 from hyperflow.builders.open_api_parser import SchemaExtractor, ToolDefinition
-from hyperflow.core.models import HyperEdge, Node, NodeType, ToolSchemaHypergraph
+from hyperflow.core.models import Dependency, HyperEdge, Node, NodeType, ToolSchemaHypergraph
 
 
 logger = logging.getLogger(__name__)
@@ -359,7 +359,67 @@ class HypergraphBuilder:
         dependencies = []
 
         # get all input and output nodes
-        input_nodes 
+        input_nodes = [n for n in nodes_by_name.values()
+                        if n.node_type == NodeType.INPUT_SCHEMA]
+        output_nodes = [n for n in nodes_by_name.values()
+                        if n.node_type == NodeType.OUTPUT_SCHEMA]
+
+        if not input_nodes or not output_nodes:
+            return []
+
+        # generate descriptions for embedding 
+        input_texts = [f"{n.name}: {n.description}" for n in input_nodes]
+        output_texts = [f"{n.name}: {n.description}" for n in output_nodes]
+
+        try:
+            # compute embeddings
+            input_embeddings = self.embedding_model.encode(input_texts)
+            output_embeddings = self.embedding_model.encode(output_texts)
+
+            # compute similarities
+            import numpy as np
+            similarities = np.dot(input_embeddings, output_embeddings)
+
+            # for each input, find top output matches
+            for i, input_node in enumerate(input_nodes):
+                for j, output_node in enumerate(output_nodes):
+                    sim = similarities[i, j]
+
+                    # skip if low similarity
+                    if sim < 0.5:
+                        continue
+
+                    # skip same tool
+                    if input_node.metadata.get('tool_name') == output_node.metadata.get('tool_name'):
+                        continue
+
+                    # add as dependency with semantic weight
+                    weight = max(0.3, sim * 0.8) # scale down a bit
+                    dependencies.append((output_node.id, input_node.id, weight))
+
+        except Exception as e:
+            logger.warning(f"Failed to compute semantic dependencies: {e}")
+
+        return dependencies
+
+    def _filter_dependencies(
+            self,
+            dependencies: List[Tuple[UUID, UUID, float]],
+            hypergraph: ToolSchemaHypergraph
+    ) -> List[Dependency]:
+        """
+        Filter and deduplicate dependencies.
+        """
+        # group by (source, target) and keep max weight
+        dep_map= {}
+
+        for source_id, target_id, weight in dependencies:
+            key = (source_id, target_id)
+            if key not in dep_map or weight > dep_map[key]:
+                dep_map[key] = weight
+
+        # create dependency objects
+        
 
     
 
