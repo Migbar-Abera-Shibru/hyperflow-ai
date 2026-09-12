@@ -345,6 +345,22 @@ class HypergraphBuilder:
 
         return similarity
 
+    def _add_semantic_dependencies(
+            self,
+            nodes_by_name: Dict[str, Node],
+            edges_by_name: Dict[str, HyperEdge]
+    ) -> List[Tuple[UUID, UUID, float]]:
+        """
+        Add semantic dependencies using embeddings.
+        """
+        if not self.use_embeddings or not self.embedding_model:
+            return []
+
+        dependencies = []
+
+        # get all input and output nodes
+        input_nodes 
+
     
 
 
