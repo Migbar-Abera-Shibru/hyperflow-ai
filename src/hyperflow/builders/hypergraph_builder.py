@@ -419,6 +419,40 @@ class HypergraphBuilder:
                 dep_map[key] = weight
 
         # create dependency objects
+        filtered_deps = []
+
+        for (source_id, target_id), weight in dep_map.items():
+            # check if nodes exist
+            if source_id not in hypergraph.nodes:
+                logger.debug(f"Skipping dependency: source {source_id} not found")
+                continue
+
+            if target_id not in hypergraph.nodes:
+                logger.debug(f"Skipping dependency: target {target_id} not found")
+                continue
+
+            # check if this is a valid dependency
+            source_node = hypergraph.nodes[source_id]
+            target_node = hypergraph.nodes[target_id]
+
+            # only allow if target is input/condition and source is output/effect
+            if target_node.node_type not in [NodeType.INPUT_SCHEMA, NodeType.CONDITION]:
+                continue
+
+            if source_node.node_type not in [NodeType.OUTPUT_SCHEMA, NodeType.EFFECT]:
+                continue
+
+            dep = Dependency(
+                source_node=source_id,
+                target_node=target_id,
+                weight=weight,
+                is_automated=True,
+                verified=False
+            )
+
+            filtered_deps.append(dep)
+
+        return filtered_deps
         
 
     
