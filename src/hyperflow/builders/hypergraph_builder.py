@@ -454,6 +454,18 @@ class HypergraphBuilder:
 
         return filtered_deps
         
+    
+    def _build_support_matrix(
+            self,
+            hypergraph: ToolSchemaHypergraph
+    ) -> None:
+        """
+        Build and attach the support matrix.
+        """
+        from hyperflow.core.models import SupportMatrix
+
+        input_nodes = [n for n in hypergraph.nodes.values()
+                       if n.node_type == NodeType.INPUT_SCHEMA]
 
     
 
