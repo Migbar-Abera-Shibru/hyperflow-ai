@@ -466,6 +466,25 @@ class HypergraphBuilder:
 
         input_nodes = [n for n in hypergraph.nodes.values()
                        if n.node_type == NodeType.INPUT_SCHEMA]
+        hyperedges = list(hypergraph.hyperedges.values())
+
+        if not input_nodes or not hyperedges:
+            return 
+
+        # build the matrix
+        matrix = hypergraph.build_support_matrix()
+
+        # create supportMatrix and attach
+        support = SupportMatrix(
+            matrix=matrix,
+            input_node_ids=[n.id for n in input_nodes],
+            hyperedge_ids=[e.id for e in hyperedges]
+        )
+
+        # store in hypergraph
+        hypergraph._support_matrix = matrix
+
+        
 
     
 
