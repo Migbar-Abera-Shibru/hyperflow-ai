@@ -24,10 +24,10 @@ Usage:
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
-from hyperflow.builders.open_api_parser import SchemaExtractor, ToolDefinition
+from hyperflow.builders.open_api_parser import  SchemaExtractor, ToolDefinition
 from hyperflow.core.models import Dependency, HyperEdge, Node, NodeType, ToolSchemaHypergraph
 
 
@@ -484,7 +484,57 @@ class HypergraphBuilder:
         # store in hypergraph
         hypergraph._support_matrix = matrix
 
+    def build_from_openapi(
+            self,
+            spec_path: str,
+            annotations: Optional[Dict[str, Dict[str, Any]]] = None
+    ) -> ToolSchemaHypergraph:
+        """
+        Build hypergraph directly from an OpenAPI spec file.
         
+        Args:
+            spec_path: Path to OpenAPI spec file
+            annotations: Optional manual annotations
+        
+        Returns:
+            Complete ToolSchemaHypergraph
+        """
+        from hyperflow.builders.open_api_parser import OpenAPIParser
+        parser = OpenAPIParser()
+
+        if annotations: 
+            spec = self._load_spec(spec_path)
+            tool_defs = parser.parse_with_annotations(spec, annotations)
+        else:
+            tool_defs = parser.parse_file(spec_path)
+
+        return self.build(tool_defs)
+
+    def save(
+            self,
+            hypergraph: ToolSchemaHypergraph,
+            path: str
+    ) -> None:
+        """
+        Save the hypergraph to a file.
+        """
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(hypergraph.to_json())
+
+        logger.info(f"Saved hypergraph to {path}")
+
+    def load( self, path: str) -> ToolSchemaHypergraph:
+        """
+        Load a hypergraph from a file.
+        """
+        with open(path, 'w', encoding='utf-8') as f:
+            json_str = f.read()
+
+        hypergraph = ToolSchemaHypergraph.from_json(json_str)
+        logger.info(f"Loaded hypergraph form {path}")
+        return hypergraph
+    
+
 
     
 
