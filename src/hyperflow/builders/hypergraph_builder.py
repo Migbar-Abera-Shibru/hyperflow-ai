@@ -509,6 +509,19 @@ class HypergraphBuilder:
             tool_defs = parser.parse_file(spec_path)
 
         return self.build(tool_defs)
+    def _load_spec(self, spec_path: str) -> Dict[str, Any]:
+        """ Load an Open API spec from file"""
+
+        from pathlib import Path
+        import yaml
+        import json
+
+        path = Path(spec_path)
+        with open(path, 'r', encoding='utf-8') as f:
+            if path.suffix in ['.yaml', '.yml']:
+                return yaml.safe_load(f)
+            else: 
+                return json.load(f)
 
     def save(
             self,
@@ -527,7 +540,7 @@ class HypergraphBuilder:
         """
         Load a hypergraph from a file.
         """
-        with open(path, 'w', encoding='utf-8') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             json_str = f.read()
 
         hypergraph = ToolSchemaHypergraph.from_json(json_str)
