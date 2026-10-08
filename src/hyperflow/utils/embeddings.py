@@ -89,3 +89,28 @@ class EmbeddingCache:
 
         return None
 
+
+    def set(self, key: str, embedding: np.ndarray) -> None:
+        """ store embedding in cache."""
+        # evict if needed
+        if len(self._cache) >= self.max_size:
+            oldest = self._access_order.pop(0)
+            del self._cache[oldest]
+
+        self._cache[key] = embedding
+        self._access_order.append(key)
+
+        # persist to disk
+        if self.persist_dir:
+            cache_file = Path(self.persist_dir) / f"{hashlib.md5(key.encode()).hexdigest()}.npy"
+            np.save(cache_file, embedding)
+
+    def clear(self) -> None:
+        """ clear the cache."""
+        self._cache.clear()
+        self._access_order.clear()
+
+        if self.persist_dir:
+            import shutil
+            shutil.rmtree(self.persist_dir)
+            Path(self.persist_dir).mkdir(parents=True, exist_ok=True)
