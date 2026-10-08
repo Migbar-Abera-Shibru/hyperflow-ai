@@ -1,7 +1,7 @@
 # tests/integration/test_hypergraph_builder.py
 
 import pytest
-from src.hyperflow.builders.openapi_parser import OpenAPIParser
+from src.hyperflow.builders.open_api_parser import OpenAPIParser
 from src.hyperflow.builders.hypergraph_builder import HypergraphBuilder
 
 
