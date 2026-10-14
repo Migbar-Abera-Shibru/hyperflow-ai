@@ -229,3 +229,117 @@ class EmbeddingManager:
         self.cache.set(cache_key, embedding)
 
         return embedding
+
+    def _embed_sentence_transformers(self, text: str) -> np.ndarray:
+        """ embed using setence transformers."""
+        return self.model.encode(text, normalize_embeddings=True)
+
+    def _embed_openai(self, text: str) -> np.ndarray:
+        """ embed using openai"""
+        response = self.model.create(
+            model="text-embedding-ada-002",
+            input=text
+        )
+        return np.array(response.data[0].embedding)
+
+    def _embed_groq(self, text: str) -> np.ndarray:
+        """ embed using groq"""
+        # groq doesn't have native embeddings, use a local fallback
+        # or use a differen model
+        logger.warning(" groq doesn't support embeddings natively. using sentence-transformers fallback.")
+        return self._embed_sentence_transformers(text)
+
+    def embed_batch(self, texts: List[str]) -> List[np.ndarray]:
+        """
+        Embed multiple texts efficiently.
+        
+        Args:
+            texts: List of texts to embed
+            
+        Returns:
+            List of embedding vectors
+        """
+        if not texts:
+            return []
+
+        # check cache first
+        results = []
+        uncached_indices = []
+        uncached_texts = []
+
+        for i, text in enumerate(texts):
+            cache_key = f"{self.config.model_name}:{text}"
+            cached = self.cache.get(cache_key)
+            if cached is not None:
+                results.append((i, cached))
+            else:
+                uncached_indices.append(i)
+                uncached_texts.append(text)
+                results.append((i, None)) # placeholder
+
+        # embed uncaced texts in batch
+        if uncached_texts:
+            if self.config.model_type == "sentence-transformers":
+                batch_embeddings = self.model.encode(
+                    uncached_texts,
+                    normalize_embeddings=True,
+                    batch_size=self.config.batch_size
+                )
+            elif self.config.model_type == "openai":
+                batch_embeddings = self._embed_openai_batch(uncached_texts)
+            else:
+                # fallback to individual
+                batch_embeddings = [self.embed(text) for text in uncached_texts]
+
+            # store results
+            for idx, embedding in zip(uncached_indices, batch_embeddings):
+                cache_key = f"{self.config.model_name}:{uncached_texts[idx]}"
+                self.cache.set(cache_key, embedding)
+                results[idx] = (idx, embedding)
+        #sort by original order
+        results.sort(key=lambda x: x[0])
+        return [r[1] for r in results]
+
+    def _embed_openai_batch(self, texts: List[str]) -> List[np.ndarray]:
+        """ embed batch using openai"""
+        response = self.model.create(
+            model="text-embedding-ada-002",
+            input=texts
+        )
+        return [np.array(item.embedding) for item in response.data]
+
+    def similarity(self, text1: str, text2: str) -> float:
+        """
+        Compute cosine similarity between two texts.
+        
+        Args:
+            text1: First text
+            text2: Second text
+            
+        Returns:
+            Similarity score (0-1)
+        """
+        vec1 = self.embed(text1)
+        vec2 = self.embed(text2)
+        return np.dot(vec1, vec2)
+
+    def similarity_batch(self, texts1: List[str], texts2: List[str]) -> List[float]:
+        """
+        Compute pairwise similarities between two lists of texts.
+        
+        Args:
+            texts1: First list of texts
+            texts2: Second list of texts
+            
+        Returns:
+            List of similarity scores
+        """
+
+        if len(texts1) != len(texts2):
+            raise ValueError("Lists must have the same length")
+
+        vecs1 = self.embed_batch(texts1)
+        vecs2 = self.embed_batch(texts2)
+
+        return[np.dot(v1, v2) for v1, v2 in zip(vecs1, vecs2)]
+
