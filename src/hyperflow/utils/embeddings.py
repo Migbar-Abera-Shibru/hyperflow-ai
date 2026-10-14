@@ -36,7 +36,7 @@ from dataclasses import dataclass
 import hashlib
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -342,4 +342,134 @@ class EmbeddingManager:
         vecs2 = self.embed_batch(texts2)
 
         return[np.dot(v1, v2) for v1, v2 in zip(vecs1, vecs2)]
+
+    def similarity_matrix(self, texts1: List[str], texts2: List[str]) -> np.ndarray:
+        """
+        Compute full similarity matrix between two sets of texts.
+        
+        Args:
+            texts1: First set of texts
+            texts2: Second set of texts
+            
+        Returns:
+            Similarity matrix (len(texts1) x len(texts2))
+        """
+        vecs1 = self.embed_batch(texts1)
+        vecs2 = self.embed_batch(texts2)
+
+        # stack vectors for efficient computation
+        mat1 = np.vstack(vecs1)
+        mat2 = np.vstack(vecs2)
+
+        return np.dot(mat1, mat2.T)
+
+    def get_embedding_dimension(self) -> int:
+        """Get the dimension of embeddings."""
+        if self.config.model_type == "sentence_transformers":
+            return self.model.get_sentence_embedding_dimension()
+        elif self.config.model_type == "openai":
+            return 1536 # text-embedding-ada-002 dimension
+        else:
+            return 384 # default
+
+    def clear_cache(self) -> None:
+        """Clear the embedding cache."""
+        self.cache.clear()
+        logger.info("Embedding cache cleared")
+
+
+class SimilarityScorer:
+    """
+    Utility for computing semantic similarities with caching.
+    
+    Optimized for repeated similarity computations in the
+    context extraction and dependency inference.
+    """
+
+    def __init__(self, embedder: EmbeddingManager):
+        self.embedder = embedder
+        self._similarity_cache: Dict[Tuple[str, str], float] = {}
+
+    def score(self, text1: str, text2: str) -> float:
+        """
+        Compute similarity with caching.
+        
+        Args:
+            text1: First text
+            text2: Second text
+            
+        Returns:
+            Similarity score
+        """
+        # normalize texts for caching
+        key1 = text1.lower().strip()
+        key2 = text2.lower().strip()
+
+        # sort to make cache lookup symmetric
+        if key1 > key2:
+            key1, key2 = key2, key1
+
+        cache_key = (key1, key2)
+        if cache_key in self._similarity_cache:
+            return self._similarity_cache[cache_key]
+
+        # compute similarity
+        similarity = self.embedder.similarity(text1, text2)
+
+        #cache
+        self._similarity_cache[cache_key] = similarity
+
+        return similarity
+
+    def score_batch(self, pairs: List[Tuple[str, str]]) -> List[float]:
+        """
+        Compute similarities for multiple pairs.
+        
+        Args:
+            pairs: List of (text1, text2) pairs
+            
+        Returns:
+            List of similarity scores
+        """
+        # separate cached and uncached
+        cached_scores = []
+        uncached_indices = []
+        uncached_pairs = []
+
+        for i, (text1, text2) in enumerate(paris):
+            key1 = text1.lower().strip()
+            key2 = text2.lower().strip()
+            if key1 > key2:
+                key1, key2 = key2, key1
+
+            cache_key = (key1, key2)
+            if cache_key in self._similarity_cache:
+                cached_scores.append((i, self._similarity_cache[cache_key]))
+            else:
+                uncached_indices.append(i)
+                uncached_pairs.append((text1, text2))
+                cached_scores.append((i, None))
+
+        # compute uncached similarities
+        if uncached_pairs:
+            texts1 = [p[0] for p in uncached_pairs]
+            texts2 = [p[1] for p in uncached_pairs]
+            scores = self.embedder.similarity_batch(texts1, texts2)
+
+            # cache and store 
+            for idx, score in zip(uncached_indices, scores):
+                text1, text2 = uncached_pairs[idx]
+                key1 = text1.lower().strip()
+                key2 = text2.lower().strip()
+                if key1 > key2:
+                    key1, key2 = key2, key1
+                cache_key = (key1, key2)
+                self._similarity_cache[cache_key] = score
+                cached_scores[idx] = (idx, score)
+
+
+        # sort and return
+        cached_scores.sort(key=lambda x: x[0])
+        return [s for _, s in cached_scores]
+
 
