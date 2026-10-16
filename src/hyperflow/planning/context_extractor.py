@@ -24,7 +24,8 @@ Production considerations:
 
 from dataclasses import dataclass, field
 import logging
-from typing import List, Optional
+from typing import Dict, List, Optional
+from uuid import UUID
 
 from hyperflow.core.models import ToolSchemaHypergraph
 from hyperflow.utils.embeddings import EmbeddingManager, SimilarityScorer
@@ -119,4 +120,16 @@ class ContextExtractor:
 
         # precompute tool descritions for similarity
         self._tool_descriptions = self._precompute_descriptions()
+
+        #cache for similarity scores
+        self._similarity_cache: Dict[str, float] = {}
+
+    def _precompute_descriptions(self) -> Dict[UUID, str]:
+        # precompute tool descriptions for efficient retrival
+        descriptions = {}
+        for edge_id, edge in self.hypergraph.hyperedges.items():
+            # combine name and description
+            desc = f"{edge.name}: {edge.description}"
+            descriptions[edge_id] = desc
+        return descriptions
         
