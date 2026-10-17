@@ -132,4 +132,55 @@ class ContextExtractor:
             desc = f"{edge.name}: {edge.description}"
             descriptions[edge_id] = desc
         return descriptions
+
+    def extract_context(
+        self,
+        task: str,
+        task_interpretation: Optional[TastInterpretation] = None
+    ) -> ToolSchemaHypergraph:
+        """
+        Extract a task-relevant context graph.
+        
+        Args:
+            task: User request text
+            task_interpretation: Optional pre-computed interpretation
+            
+        Returns:
+            Tool Context Graph (subhypergraph)
+        """
+        logger.info(f"extracting context for task: {task[:100]}...")
+
+        # step 1: get task interperetation
+        if task_interpretation is None:
+            task_interpretation = self._interprete_task(task)
+
+        # step 2: anchor seed hyperedges
+        seed_edges = self._anchor_seed_hyperedges(task_interpretation)
+        logger.info(f"anchored {len(seed_edges)} seed hyperedges")
+
+        # step 3: anchor seed nodes
+        seed_nodes = self._anchor_seed_nodes(task_interpretation)
+        logger.info(f"anchored{len(seed_nodes)} seed nodes")
+
+        # step 4: expand seed nodes with associated tools
+        associated_edges = self._add_associated_tools(seed_nodes)
+        seed_edges.update(associated_edges)
+
+        # step 5: backward expansion
+        explanded_edges = self._backward_expansion(seed_nodes, seed_edges)
+        seed_edges.update(explanded_edges)
+
+        # step 6: build the context graph
+        context_graph = self.hypergraph.get_subgraph(seed_edges)
+
+        # step 7: validate and ensure it's not empty
+        if len(context_graph.hyperedges) == 0:
+            logger.warning("empty context graph, using fallback")
+            context_graph = self._fallback_context()
+
+        logger.info(f"context graph: {len(context_graph.hyperedges)} tpp;s, "
+                    f"{len(context_graph.nodes)} nodes,"
+                    f"{len(context_graph.dependencies)} dependencies")
+
+        return context_graph
         
