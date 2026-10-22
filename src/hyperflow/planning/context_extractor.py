@@ -24,7 +24,7 @@ Production considerations:
 
 from dataclasses import dataclass, field
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from uuid import UUID
 
 from hyperflow.core.models import ToolSchemaHypergraph
@@ -58,7 +58,7 @@ class ContextExtractionConfig:
     max_context_size: int = 100
 
 @dataclass
-class TastInterpretation:
+class TaskInterpretation:
     """
     Structured interpretation of a user request.
     
@@ -136,7 +136,7 @@ class ContextExtractor:
     def extract_context(
         self,
         task: str,
-        task_interpretation: Optional[TastInterpretation] = None
+        task_interpretation: Optional[TaskInterpretation] = None
     ) -> ToolSchemaHypergraph:
         """
         Extract a task-relevant context graph.
@@ -183,4 +183,60 @@ class ContextExtractor:
                     f"{len(context_graph.dependencies)} dependencies")
 
         return context_graph
+    
+    def _interpret_task(self, task: str) -> TaskInterpretation:
+        """
+        Generate a structured interpretation of the task.
+        
+        In production, this would call an LLM. For now, we use a simple
+        heuristic-based approach.
+        """
+        # For MVP, use a simple extraction
+        # In production, this would be an LLM call with prompt engineering
+
+        # replace with LLM based interpretation
+        # for now we use task as both operation and schema text
+        return TaskInterpretation(
+            operations=task,
+            schemas=task,
+            entities=[],
+            constraints=[],
+            desired_outcomes=[],
+            raw_text=task
+        )
+
+    def _anchor_seed_hyperedges(
+            self,
+            interpretation: TaskInterpretation,
+    ) -> Set[UUID]:
+        """
+        Anchor seed hyperedges based on operation-level similarity.
+        
+        Selects top-K hyperedges with operation similarity above threshold.
+        """
+        operation_text = interpretation.get_operation_text()
+
+        if not operation_text:
+            return set()
+
+        #compute similarities for all tools
+        similarities = []
+        for edge_id, desc in self._tool_descriptions.items():
+            #use chached similairty if available
+            cache_key = f"op_{edge_id}_{operation_text}"
+            if cache_key in self._similarity_cache:
+                sim = self._similarity_cache[cache_key]
+            else:
+                sim = self.scorer.score(desc, operation_text)
+                self._similarity_cache[cache_key] = sim
+
+            if sim >= self.config.hyperedge_threshold:
+                similarities.append((edge_id, sim))
+
+        # sort by similarity and take top-k
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        top_edges = similarities[:self.config.seed_hyperedges_k]
+
+        return {edge_id for edge_id, _ in top_edges}
+        
         
