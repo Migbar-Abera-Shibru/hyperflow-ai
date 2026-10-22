@@ -24,10 +24,10 @@ Production considerations:
 
 from dataclasses import dataclass, field
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 from uuid import UUID
 
-from hyperflow.core.models import ToolSchemaHypergraph
+from hyperflow.core.models import Node, NodeType, ToolSchemaHypergraph
 from hyperflow.utils.embeddings import EmbeddingManager, SimilarityScorer
 
 
@@ -238,5 +238,180 @@ class ContextExtractor:
         top_edges = similarities[:self.config.seed_hyperedges_k]
 
         return {edge_id for edge_id, _ in top_edges}
+
+    def _anchor_seed_nodes(self, interpretation: TaskInterpretation) -> Set[UUID]:
+        """
+        Anchor seed nodes based on schema-level similarity.
+        
+        Selects top-K input and output nodes with similarity above threshold.
+        """
+        schema_text = interpretation.get_schema_text()
+
+        if not schema_text:
+            return set()
+
+        # separate input and output nodes
+        input_nodes = [
+            n for n in self.hypergraph.nodes.values()
+            if n.node_type == NodeType.INPUT_SCHEMA
+        ]
+        output_nodes = [
+            n for n in self.hypergraph.nodes.values()
+            if n.node_type == NodeType.OUTPUT_SCHEMA
+        ]
+
+        seed_nodes = set()
+
+        # score input nodes
+        input_scores = self._score_nodes(input_nodes, schema_text)
+        for node_id, score in input_scores[:self.config.seed_nodes_k]:
+            if score >= self.config.node_threshold:
+                seed_nodes.add(node_id)
+
+        # score output nodes
+        output_scores = self._score_nodes(output_nodes, schema_text)
+        for node_id, score in output_scores[:self.config.seed_nodes_k]:
+            if score >= self.config.node_threshold:
+                seed_nodes.add(node_id)
+
+        return seed_nodes
+
+    def _score_nodes(self, nodes: List[Node], query: str) -> List[Tuple[UUID, float]]:
+        # score nodes by semantic similarity to query
+        scores = []
+
+        for node in nodes:
+            #create description from node name and description
+            node_text = f"{node.name}: {node.description}"
+
+            # use cached similarity if available 
+            cache_key = f"node{node.id}_{query}"
+            if cache_key in self._similarity_cache:
+                sim = self._similarity_cache[cache_key]
+            else:
+                sim = self.scorer.score(node_text, query)
+                self._similarity_cache[cache_key] = sim
+
+            scores.append((node.id, sim))
+
+        scores.sort(key=lambda x: x[1], reverse=True)
+        return scores
+
+    def _add_associated_tools(self, seed_nodes: Set[UUID]) -> Set[UUID]:
+        """
+        Add tools directly associated with seed nodes.
+        
+        For output nodes: add producer tools
+        For input nodes: add consumer tools
+        """
+        associated_edges = set()
+
+        for node_id in seed_nodes:
+            node = self.hypergraph.nodes.get(node_id)
+            if not node:
+                continue
+
+            if node.node_type == NodeType.OUTPUT_SCHEMA:
+                # find producer tools
+                for edge_id, edge in self.hypergraph.hyperedges.items():
+                    if node_id in edge.output_nodes:
+                        associated_edges.add(edge_id)
+
+            elif node.node_type == NodeType.INPUT_SCHEMA:
+                # find consumer tools
+                for edge_id, edge in self.hypergraph.hyperedges.items():
+                    if node_id in edge.input_nodes:
+                        associated_edges.add(edge_id)
+
+            elif node.node_type == NodeType.EFFECT:
+                # find effect producers
+                for edge_id, edge in self.hypergraph.hyperedges.items():
+                    if node_id in edge.output_nodes:
+                        associated_edges.add(edge_id)
+
+        return associated_edges
+
+    def _backward_expansion(self, seed_nodes: Set[UUID], seed_edges: set[UUID]) -> Set[UUID]:
+        """
+        Perform bounded backward expansion.
+        
+        Starting from seed nodes, follow dependency links backwards
+        to find prerequisite tools.
+        """
+        expanded_edges = set()
+
+        # initialize frontier with input nodes from seed edges
+        frontier = set(seed_nodes)
+        for edge_id in seed_edges:
+            edge = self.hypergraph.hyperedges.get(edge_id)
+            if edge: 
+                frontier.update(edge.input_nodes)
+
+        # backward expansion for each hop
+        for hop in range(self.config.max_hops):
+            logger.debug(f" backward expansion hop {hop + 1}: frontier size {len(frontier)}")
+
+
+            new_frontier = set()
+            producers_found = False
+
+            for node_id in frontier:
+                # find producers for this input node
+                producers = self._find_producers(node_id)
+
+                # add top-k producers
+                for edge_id, weight in producers[:self.config.producers_per_node]:
+                    expanded_edges.add(edge_id)
+                    producers_found = True
+
+                    # add producers input nodes to next frontier 
+                    edge = self.hypergraph.hyperedges.get(edge_id)
+                    if edge: 
+                        new_frontier.update(edge.input_nodes)
+
+            frontier = new_frontier
+
+            # stop if no new producers found
+            if not producers_found:
+                break
+
+        return expanded_edges
+
+    def _find_producers(self, node_id: UUID) -> List[Tuple[UUID, float]]:
+        """
+        Find producer tools for a node.
+        
+        Uses the support matrix for efficient lookup.
+        """
+        node = self.hypergraph.nodes.get(node_id)
+        if not node:
+            return []
+
+        # check if this is an input node
+        if node.node_type != NodeType.INPUT_SCHEMA:
+            return []
+
+        # use support matrix if available
+        if hasattr(self.hypergraph, '_support_matrix'):
+            matrix = self.hypergraph._support_matrix
+            # this assumers the matrix has been built and use the dependency based method
+
+        # fallback: find producers through dependencies
+        producers = []
+        for dep in self.hypergraph.dependencies.values():
+            if dep.target_node == node_id:
+                # find which hyperedge produces the source
+                for edge_id, edge in self.hypergraph.hyperedges.items():
+                    if dep.source_node in edge.output_nodes:
+                        producers.append((edge_id, dep.weight))
+                        break
+
+        # sort by weight
+        producers.sort(key=lambda x: x[1], reverse=True)
+        return producers
+
+    
+
+
         
         
