@@ -23,6 +23,7 @@ Production considerations:
 """
 
 from dataclasses import dataclass, field
+import hashlib
 import logging
 from typing import Dict, List, Optional, Set, Tuple
 from uuid import UUID
@@ -409,6 +410,72 @@ class ContextExtractor:
         # sort by weight
         producers.sort(key=lambda x: x[1], reverse=True)
         return producers
+    
+    def _fallback_context(self) -> ToolSchemaHypergraph:
+        """
+        Create a fallback context when extraction yields empty graph.
+        
+        Returns a small subgraph with the most connected tools.
+        """
+        # find the most connected tools the highest degree
+        if not self.hypergraph.hyperedges:
+            return ToolSchemaHypergraph()
+
+        # get tools with highest number of dependencies
+        edge_importance = {}
+        for edge_id in self.hypergraph.hyperedges:
+            # cound dependencies involving this tool
+            count = 0
+            for dep in self.hypergraph.dependencies.values():
+                # check if dep involves this edge's nodes
+                edge = self.hypergraph.hyperedges[edge_id]
+                if (dep.source_node in edge.output_nodes or 
+                    dep.target_node in edge.input_nodes):
+                    count += 1
+            edge_importance[edge_id] = count
+
+        # take top tools
+        top_edges = sorted(edge_importance.items(), key=lambda x: x[1], reverse=True)
+        top_edge_ids = {edge_id for edge_id, _ in top_edges[:10]}
+
+        return self.hypergraph.get_subgraph(top_edge_ids)
+
+    def extract_with_caching(self, task: str, cache_key: Optional[str] = None) -> ToolSchemaHypergraph:
+        """
+        Extract context with caching.
+        
+        Args:
+            task: User request
+            cache_key: Optional custom cache key
+            
+        Returns:
+            Tool Context Graph
+        """
+        if cache_key is None:
+            cache_key = hashlib.md5(task.encode()).hexdigest()
+
+        # Check if we have a cached context
+        # TODO: Implement Redis caching
+        # For now, just extract fresh
+
+        return self.extract_context(task)
+
+    def extract_with_llm_interpretation(self, task: str, llm_client=None) -> ToolSchemaHypergraph:
+        """
+        Extract context using LLM for task interpretation.
+        
+        This is the production-quality version that uses an LLM
+        to generate structured task interpretations.
+        """
+
+        # TODO: Implement LLM-based interpretation
+        # This would call an LLM with a prompt like:
+        # "Given the task: {task}, extract operations and schemas"
+        
+        # For now, fall back to basic extraction
+        return self.extract_context(task)
+
+        
 
     
 
